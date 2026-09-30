@@ -1,0 +1,63 @@
+{
+  "name": "crp-extnl",
+  "private": true,
+  "version": "0.1.0",
+  "productName": "CRP Presence Builder",
+  "description": "Desktop app for managing Discord rich-presence activities across multiple accounts.",
+  "author": "CRP Presence Builder",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "preview": "vite preview",
+    "desktop": "electron ."
+  },
+  "build": {
+    "appId": "com.crp.presencebuilder",
+    "productName": "CRP Presence Builder",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "crp-app-icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "artifactName": "CRP-Presence-Builder-${version}-${arch}.${ext}"
+  },
+  "dependencies": {
+    "discord.js-selfbot-v13": "^3.7.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.5.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

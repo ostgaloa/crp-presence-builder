@@ -1,0 +1,91 @@
+@font-face {
+  font-family: 'ProggyTiny';
+  src: url('./assets/ProggyTiny.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  font-family: 'ProggyTiny', monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  --background-base: #080B14;
+  --background-gradient-mid: #0C1220;
+  --background-gradient-elevated: #101B2E;
+  --background-gradient-edge: #142C45;
+  --surface-secondary: #0D1422;
+  --surface-elevated: #111A2C;
+  --border-subtle: #16263A;
+  --accent-primary: #17608A;
+  --accent-blue: #164A78;
+  --accent-cyan: #2A8DB3;
+  --accent-cyan-highlight: #5AB6C9;
+  --accent-warm: #A97855;
+  --accent-warm-highlight: #D2A66F;
+  --text-primary: #D8E2EA;
+  --text-secondary: #8295A5;
+  --text-muted: #586A7A;
+  color: var(--text-primary);
+  background: var(--background-base);
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-primary) var(--surface-secondary);
+}
+
+@supports selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-track { background: var(--surface-secondary); }
+::-webkit-scrollbar-thumb {
+  background: var(--accent-primary);
+  border: 2px solid var(--surface-secondary);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan-highlight); }
+::-webkit-scrollbar-corner { background: var(--surface-secondary); }
+
+body,
+body * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  background: linear-gradient(135deg, var(--background-base) 0%, var(--background-gradient-mid) 52%, var(--background-gradient-elevated) 82%, var(--background-gradient-edge) 100%) fixed;
+}
+
+button, input, textarea {
+  font: inherit;
+}
