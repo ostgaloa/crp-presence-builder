@@ -1,7 +1,7 @@
 {
   "name": "crp-extnl",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "productName": "CRP Presence Builder",
   "description": "Desktop app for managing Discord rich-presence activities across multiple accounts.",
   "author": "CRP Presence Builder",

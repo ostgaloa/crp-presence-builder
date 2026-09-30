@@ -8,6 +8,8 @@ import { applyPresenceClipboard, decodePresenceClipboard, encodePresenceClipboar
 const APP_NAMES_STORAGE_KEY = 'crp-app-names'
 const APP_STATE_STORAGE_KEY = 'crp-app-state'
 const LEGACY_PRESENCES_STORAGE_KEY = 'crp-presences'
+const DEMO_ACCOUNT_ID_STORAGE_KEY = 'crp-demo-account-id'
+const DEMO_ACCOUNT_HIDDEN_STORAGE_KEY = 'crp-demo-account-hidden'
 const MAX_PRESENCES = 100
 const MAX_PRESENCE_STORAGE_LENGTH = 4_000_000
 
@@ -24,6 +26,17 @@ function restorePresetPresence(value: PresetPresence, _accountId: string): Prese
 function connectedAccountsLabel(accounts: SelfbotAccount[]): string {
   const count = accounts.filter((account) => account.connected).length
   return `${count} account${count === 1 ? '' : 's'} connected.`
+}
+
+function readDemoAccountId(): string {
+  const savedId = localStorage.getItem(DEMO_ACCOUNT_ID_STORAGE_KEY)
+  if (savedId && /^\d{18}$/.test(savedId)) return savedId
+
+  const randomDigits = crypto.getRandomValues(new Uint8Array(18))
+  randomDigits[0] = (randomDigits[0] % 9) + 1
+  const demoAccountId = Array.from(randomDigits, (digit) => String(digit % 10)).join('')
+  localStorage.setItem(DEMO_ACCOUNT_ID_STORAGE_KEY, demoAccountId)
+  return demoAccountId
 }
 
 declare global {
@@ -238,6 +251,10 @@ function readApplicationNames(): Record<string, string> {
 
 function App() {
   const [runtimeAccounts, setRuntimeAccounts] = useState<SelfbotAccount[]>([])
+  const [demoAccountId] = useState(readDemoAccountId)
+  const [demoAccountVisible, setDemoAccountVisible] = useState(
+    () => localStorage.getItem(DEMO_ACCOUNT_HIDDEN_STORAGE_KEY) !== 'true',
+  )
   const [appState, setAppState] = useState(() => readInitialAppState())
   const [editingPresenceId, setEditingPresenceId] = useState('')
   const [presenceNameDraft, setPresenceNameDraft] = useState('')
@@ -290,6 +307,12 @@ function App() {
   const refreshPresets = async () => {
     const result = await window.crpBridge?.listPresets()
     if (result?.ok) setPresetFiles(result.presets ?? [])
+  }
+
+  const dismissDemoAccount = () => {
+    localStorage.setItem(DEMO_ACCOUNT_HIDDEN_STORAGE_KEY, 'true')
+    setDemoAccountVisible(false)
+    setStatusMessage('૮ ҂ ‸ ๑')
   }
 
   useEffect(() => {
@@ -1044,7 +1067,7 @@ function App() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Selfbot gateway</p>
-              <h2>Accounts: <span className="account-count-value">{accounts.length}</span></h2>
+              <h2>Accounts: <span className="account-count-value">{accounts.length + (demoAccountVisible ? 1 : 0)}</span></h2>
               <h2 className="uploaded-presence-heading">Presences: <span>{uploadedPresenceCount}</span></h2>
             </div>
           </div>
@@ -1085,6 +1108,28 @@ function App() {
           </div>
 
           <ul className="account-list">
+            {demoAccountVisible && (
+              <li className="account-entry">
+                <div className="account-main-row">
+                  <button className="account-select" type="button" onClick={() => setStatusMessage('૮ ҂ ‸ ๑')}>
+                    <span className="account-index">01</span>
+                    <span className="account-identity">
+                      <strong>{privacyMode ? 'Account 01' : 'ostgaloa'}</strong>
+                      <code>{privacyMode ? '••••••••••••' : demoAccountId}</code>
+                    </span>
+                    <span className="account-state is-connected">Connected</span>
+                  </button>
+                </div>
+                <div className="account-actions">
+                  <button className="text-action disconnect-account" type="button" onClick={() => setStatusMessage('૮ ҂ ‸ ๑')}>
+                    Disconnect
+                  </button>
+                  <button className="text-action forget-account" type="button" onClick={dismissDemoAccount}>
+                    Forget
+                  </button>
+                </div>
+              </li>
+            )}
             {accounts.map((account, index) => (
               <li className="account-entry" key={account.accountId}>
                 <div className="account-main-row">
@@ -1093,9 +1138,9 @@ function App() {
                     type="button"
                     onClick={() => setActiveAccountId(account.accountId)}
                   >
-                    <span className="account-index">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="account-index">{String(index + (demoAccountVisible ? 2 : 1)).padStart(2, '0')}</span>
                     <span className="account-identity">
-                      <strong>{privacyMode ? `Account ${String(index + 1).padStart(2, '0')}` : account.username}</strong>
+                      <strong>{privacyMode ? `Account ${String(index + (demoAccountVisible ? 2 : 1)).padStart(2, '0')}` : account.username}</strong>
                       <code>{privacyMode ? '••••••••••••' : account.accountId}</code>
                     </span>
                     <span className={`account-state${account.connected ? ' is-connected' : ''}`}>
@@ -1119,7 +1164,7 @@ function App() {
                 </div>
               </li>
             ))}
-            {accounts.length === 0 && <li className="empty-state">Add an account to publish activities.</li>}
+            {accounts.length === 0 && !demoAccountVisible && <li className="empty-state">Add an account to publish activities.</li>}
           </ul>
         </aside>
 
