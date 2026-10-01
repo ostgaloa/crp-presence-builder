@@ -12,6 +12,31 @@ contextBridge.exposeInMainWorld('crpBridge', {
     ipcRenderer.on('crp:accountsUpdated', listener)
     return () => ipcRenderer.removeListener('crp:accountsUpdated', listener)
   },
+  onSelfbotConnectionProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress)
+    ipcRenderer.on('crp:selfbotConnectionProgress', listener)
+    return () => ipcRenderer.removeListener('crp:selfbotConnectionProgress', listener)
+  },
+  getDebugLogs: () => ipcRenderer.invoke('crp:debugLogsGet'),
+  clearDebugLogs: () => ipcRenderer.invoke('crp:debugLogsClear'),
+  logDebugMessage: (level, message) => ipcRenderer.invoke('crp:debugLog', level, message),
+  openDebugConsole: () => ipcRenderer.invoke('crp:debugConsoleOpen'),
+  getDebugWindowLogs: () => ipcRenderer.invoke('crp:debugWindowLogsGet'),
+  clearDebugWindowLogs: () => ipcRenderer.invoke('crp:debugWindowLogsClear'),
+  writeDebugClipboardText: (content) => ipcRenderer.invoke('crp:debugClipboardWrite', content),
+  minimizeDebugWindow: () => ipcRenderer.invoke('crp:debugWindowMinimize'),
+  toggleMaximizeDebugWindow: () => ipcRenderer.invoke('crp:debugWindowToggleMaximize'),
+  closeDebugWindow: () => ipcRenderer.invoke('crp:debugWindowClose'),
+  onDebugLog: (callback) => {
+    const listener = (_event, entry) => callback(entry)
+    ipcRenderer.on('crp:debugLog', listener)
+    return () => ipcRenderer.removeListener('crp:debugLog', listener)
+  },
+  onDebugLogsCleared: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on('crp:debugLogsCleared', listener)
+    return () => ipcRenderer.removeListener('crp:debugLogsCleared', listener)
+  },
   connectSelfbot: (token) => ipcRenderer.invoke('crp:selfbotConnect', token),
   reconnectSelfbot: (accountId) => ipcRenderer.invoke('crp:selfbotReconnect', accountId),
   disconnectSelfbotAccount: (accountId) => ipcRenderer.invoke('crp:selfbotDisconnectAccount', accountId),

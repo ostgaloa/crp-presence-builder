@@ -938,6 +938,81 @@ input[type='radio'],
 .settings-backdrop { background: rgb(8 11 20 / 82%); }
 .settings-toggle strong { color: var(--text-primary); }
 
+.settings-pane { min-height: 270px; }
+.debug-launch-panel { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 14px; }
+.debug-launch-panel p { margin: 0; color: var(--text-secondary); }
+.debug-launch-panel small { color: var(--text-secondary); }
+.debug-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+.debug-console-capacity { color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
+.debug-filter { display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.debug-filter input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent-cyan); }
+.debug-filter.status span,
+.debug-log-level.status { color: var(--accent-cyan-highlight); }
+.debug-filter.success span,
+.debug-log-level.success { color: var(--accent-primary); }
+.debug-filter.warn span,
+.debug-log-level.warn { color: var(--accent-warm-highlight); }
+.debug-filter.error span,
+.debug-log-level.error { color: #ff9287; }
+.debug-clear-button { padding: 5px 8px; color: var(--text-secondary); background: var(--surface-elevated); border: 1px solid var(--border-subtle); border-radius: 4px; font: inherit; font-size: 11px; cursor: pointer; }
+.debug-clear-button:hover:not(:disabled) { color: var(--text-primary); }
+.debug-clear-button:disabled { opacity: 0.45; cursor: default; }
+.debug-console {
+  min-height: 220px;
+  max-height: min(48vh, 420px);
+  overflow: auto;
+  padding: 10px;
+  color: #d2ddd4;
+  background: #0c100d;
+  border: 1px solid #303a33;
+  border-radius: 4px;
+  font-family: 'ProggyTiny', monospace;
+  font-size: 12px;
+}
+.debug-log-entry { display: block; padding: 3px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.debug-log-entry time { color: #7d8d82; }
+.debug-log-prefix { color: #a6b5aa; }
+.debug-log-level { font-weight: 700; }
+.debug-log-message { min-width: 0; overflow-wrap: anywhere; }
+.debug-console-empty { margin: 0; padding: 12px 0; color: var(--text-secondary); }
+
+.debug-window-shell {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: var(--background-base);
+}
+.debug-console-header { min-height: 76px; flex: 0 0 auto; padding: 0 12px; background: var(--surface-secondary); }
+.debug-console-header .brand-lockup h1 { font-size: 18px; }
+.debug-window-actions { flex: 1 1 auto; justify-content: flex-end; gap: 8px; }
+.debug-window-button { min-height: 32px; padding: 6px 10px; color: var(--text-secondary); background: var(--surface-elevated); border: 1px solid var(--border-subtle); border-radius: 4px; font: inherit; font-size: 12px; cursor: pointer; }
+.debug-window-button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent-cyan); }
+.debug-window-button:disabled { opacity: 0.45; cursor: default; }
+.debug-window-content { box-sizing: border-box; display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 10px; padding: 12px; }
+.debug-window-shell .debug-console { flex: 1 1 auto; min-height: 0; max-height: none; cursor: text; user-select: text; -webkit-user-select: text; }
+.debug-log-entry,
+.debug-log-entry * { user-select: text; -webkit-user-select: text; }
+.debug-console::-webkit-scrollbar { width: 12px; height: 12px; }
+.debug-console::-webkit-scrollbar-track { background: var(--surface-secondary); border-radius: 6px; }
+.debug-console::-webkit-scrollbar-thumb { background: var(--border-subtle); border: 3px solid #0c100d; border-radius: 6px; }
+.debug-console::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan); }
+
+@media (max-width: 600px) {
+  .debug-console-header { padding-inline: 8px; }
+  .debug-console-header .brand-mark { width: 56px; height: 56px; flex-basis: 56px; }
+  .debug-console-header .brand-lockup h1 { font-size: 16px; }
+  .debug-window-actions { gap: 4px; }
+  .debug-console-capacity { display: none; }
+  .debug-window-content { padding: 8px; }
+  .debug-window-button { padding-inline: 6px; }
+  .debug-console { padding: 8px; }
+}
+
 @keyframes presence-added {
   0% { transform: translateY(3px); box-shadow: 0 0 0 0 rgb(42 141 179 / 0%); }
   35% { transform: translateY(0); box-shadow: 0 0 0 3px rgb(42 141 179 / 18%); }

@@ -18,6 +18,28 @@ type ConnectionState = 'disconnected' | 'starting' | 'running'
 type TimePart = 'hours' | 'minutes' | 'seconds'
 type SelfbotAccount = { accountId: string; username: string; connected: boolean }
 type PresetFile = { name: string; updatedAt: number }
+type DebugLevel = 'STATUS' | 'SUCCESS' | 'WARN' | 'ERROR'
+type DebugLogEntry = { id: number; timestamp: string; level: DebugLevel; message: string }
+
+const DEBUG_LEVELS: DebugLevel[] = ['STATUS', 'SUCCESS', 'WARN', 'ERROR']
+const MAX_DEBUG_LOG_ENTRIES = 1337
+
+function debugLevelForMessage(message: string): DebugLevel {
+  const normalized = message.toLowerCase()
+  if (/failed|couldn.t|unavailable|invalid|error|not found/.test(normalized)) return 'ERROR'
+  if (/saved|connected|complete|added|started|stopped|copied|pasted|uploaded/.test(normalized)) return 'SUCCESS'
+  if (/retry|timeout|pending/.test(normalized)) return 'WARN'
+  return 'STATUS'
+}
+
+function mergeDebugLogs(current: DebugLogEntry[], incoming: DebugLogEntry[]): DebugLogEntry[] {
+  const entries = new Map([...current, ...incoming].map((entry) => [entry.id, entry]))
+  return [...entries.values()].sort((left, right) => left.id - right.id).slice(-MAX_DEBUG_LOG_ENTRIES)
+}
+
+function formatDebugLogLine(entry: DebugLogEntry): string {
+  return `[${new Date(entry.timestamp).toLocaleTimeString()}] [CRP] [${entry.level}] ${entry.message}`
+}
 
 function restorePresetPresence(value: PresetPresence, _accountId: string): PresenceDraft {
   return { ...makePresence(), ...value, id: `presence-${crypto.randomUUID()}` } as PresenceDraft
@@ -45,8 +67,9 @@ declare global {
       minimizeWindow: () => Promise<void>
       toggleMaximizeWindow: () => Promise<void>
       closeWindow: () => Promise<void>
-      selfbotStatus: () => Promise<{ ok: boolean; accounts?: SelfbotAccount[]; canStoreToken?: boolean; autoConnectAccounts?: boolean; closeToTray?: boolean; privacyMode?: boolean }>
+      selfbotStatus: () => Promise<{ ok: boolean; accounts?: SelfbotAccount[]; canStoreToken?: boolean; autoConnectAccounts?: boolean; closeToTray?: boolean; privacyMode?: boolean; debugConsole?: boolean }>
       onSelfbotAccountsUpdated: (callback: (accounts: SelfbotAccount[]) => void) => () => void
+      onSelfbotConnectionProgress: (callback: (progress: { message: string; active: boolean; connectingAccountIds: string[] }) => void) => () => void
       connectSelfbot: (token: string) => Promise<{ ok: boolean; accountId?: string; username?: string; message?: string; accounts?: SelfbotAccount[] }>
       reconnectSelfbot: (accountId: string) => Promise<{ ok: boolean; accountId?: string; username?: string; message?: string; accounts?: SelfbotAccount[] }>
       disconnectSelfbotAccount: (accountId: string) => Promise<{ ok: boolean; message?: string; accounts?: SelfbotAccount[] }>
@@ -55,7 +78,19 @@ declare global {
       publishSelfbotPresence: (groups: Array<Record<string, unknown>>) => Promise<{ ok: boolean; message?: string; count?: number; resolvedImageCount?: number }>
       disconnectSelfbot: () => Promise<{ ok: boolean; message?: string }>
       forgetSelfbotAccount: (accountId: string) => Promise<{ ok: boolean; accounts?: SelfbotAccount[] }>
-      saveAppSettings: (settings: { autoConnectAccounts: boolean; closeToTray: boolean; privacyMode: boolean }) => Promise<{ ok: boolean; message?: string }>
+      getDebugLogs: () => Promise<DebugLogEntry[]>
+      clearDebugLogs: () => Promise<{ ok: boolean }>
+      logDebugMessage: (level: DebugLevel, message: string) => Promise<{ ok: boolean }>
+      onDebugLog: (callback: (entry: DebugLogEntry) => void) => () => void
+      onDebugLogsCleared: (callback: () => void) => () => void
+      openDebugConsole: () => Promise<{ ok: boolean }>
+      getDebugWindowLogs: () => Promise<DebugLogEntry[]>
+      clearDebugWindowLogs: () => Promise<{ ok: boolean }>
+      writeDebugClipboardText: (content: string) => Promise<{ ok: boolean }>
+      minimizeDebugWindow: () => Promise<void>
+      toggleMaximizeDebugWindow: () => Promise<void>
+      closeDebugWindow: () => Promise<void>
+      saveAppSettings: (settings: Partial<{ autoConnectAccounts: boolean; closeToTray: boolean; privacyMode: boolean; debugConsole: boolean }>) => Promise<{ ok: boolean; message?: string }>
       listPresets: () => Promise<{ ok: boolean; presets?: PresetFile[]; message?: string }>
       savePreset: (name: string, content: string) => Promise<{ ok: boolean; name?: string; message?: string }>
       loadPreset: (name: string) => Promise<{ ok: boolean; content?: string; message?: string }>
@@ -249,7 +284,113 @@ function readApplicationNames(): Record<string, string> {
   return {}
 }
 
+function DebugConsoleWindow() {
+  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([])
+  const [logsCopied, setLogsCopied] = useState(false)
+  const [debugFilters, setDebugFilters] = useState<Record<DebugLevel, boolean>>({
+    STATUS: true,
+    SUCCESS: true,
+    WARN: true,
+    ERROR: true,
+  })
+  const debugConsoleRef = useRef<HTMLDivElement>(null)
+  const visibleDebugLogs = debugLogs.filter((entry) => debugFilters[entry.level])
+
+  useEffect(() => {
+    let active = true
+    const bridge = window.crpBridge
+    const unsubscribeLog = bridge?.onDebugLog((entry) => {
+      if (active) setDebugLogs((current) => mergeDebugLogs(current, [entry]))
+    })
+    const unsubscribeClear = bridge?.onDebugLogsCleared(() => {
+      if (active) setDebugLogs([])
+    })
+    void bridge?.getDebugWindowLogs().then((entries) => {
+      if (active) setDebugLogs((current) => mergeDebugLogs(current, entries))
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      unsubscribeLog?.()
+      unsubscribeClear?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (debugConsoleRef.current) debugConsoleRef.current.scrollTop = debugConsoleRef.current.scrollHeight
+  }, [debugLogs, debugFilters])
+
+  useEffect(() => {
+    if (!logsCopied) return
+    const timeout = window.setTimeout(() => setLogsCopied(false), 1200)
+    return () => window.clearTimeout(timeout)
+  }, [logsCopied])
+
+  const copyVisibleLogs = async () => {
+    const content = visibleDebugLogs.map(formatDebugLogLine).join('\r\n')
+    const result = await window.crpBridge?.writeDebugClipboardText(content)
+    if (result?.ok) setLogsCopied(true)
+  }
+
+  return (
+    <main className="debug-window-shell">
+      <header className="app-header debug-console-header">
+        <div className="brand-lockup">
+          <div className="brand-mark"><img src="./crp-logo.png" alt="" /></div>
+          <div>
+            <p className="eyebrow">Custom Rich Presence</p>
+            <h1>Debug Console</h1>
+          </div>
+        </div>
+        <div className="header-controls debug-window-actions">
+          <span className="debug-console-capacity">Session · {debugLogs.length}/{MAX_DEBUG_LOG_ENTRIES}</span>
+          <button className="button button-secondary debug-window-button" type="button" disabled={visibleDebugLogs.length === 0} onClick={() => void copyVisibleLogs()}>
+            {logsCopied ? 'Copied' : 'Copy logs'}
+          </button>
+          <button className="button button-secondary debug-window-button" type="button" disabled={debugLogs.length === 0} onClick={() => {
+            void window.crpBridge?.clearDebugWindowLogs().catch(() => undefined)
+          }}>Clear</button>
+        </div>
+        <div className="window-controls" aria-label="Window controls">
+          <button className="window-control" type="button" aria-label="Minimize window" title="Minimize" onClick={() => void window.crpBridge?.minimizeDebugWindow()}>−</button>
+          <button className="window-control" type="button" aria-label="Maximize or restore window" title="Maximize or restore" onClick={() => void window.crpBridge?.toggleMaximizeDebugWindow()}>□</button>
+          <button className="window-control window-control-close" type="button" aria-label="Close debug console" title="Close" onClick={() => void window.crpBridge?.closeDebugWindow()}>×</button>
+        </div>
+      </header>
+      <section className="debug-window-content">
+        <div className="debug-filters" aria-label="Log level filters">
+          {DEBUG_LEVELS.map((level) => (
+            <label className={`debug-filter ${level.toLowerCase()}`} key={level}>
+              <input
+                type="checkbox"
+                checked={debugFilters[level]}
+                onChange={(event) => setDebugFilters((current) => ({ ...current, [level]: event.target.checked }))}
+              />
+              <span>{level}</span>
+            </label>
+          ))}
+        </div>
+        <div className="debug-console" ref={debugConsoleRef} role="log" aria-label="Application log" aria-live="off">
+          {visibleDebugLogs.length > 0 ? visibleDebugLogs.map((entry) => (
+            <div className="debug-log-entry" key={entry.id}>
+              <time dateTime={entry.timestamp}>[{new Date(entry.timestamp).toLocaleTimeString()}]</time>{' '}
+              <span className="debug-log-prefix">[CRP]</span>{' '}
+              <span className={`debug-log-level ${entry.level.toLowerCase()}`}>[{entry.level}]</span>{' '}
+              <span className="debug-log-message">{entry.message}</span>
+            </div>
+          )) : (
+            <p className="debug-console-empty">{debugLogs.length ? 'No logs match these filters.' : 'No logs yet.'}</p>
+          )}
+        </div>
+      </section>
+    </main>
+  )
+}
+
 function App() {
+  return window.location.hash === '#debug-console' ? <DebugConsoleWindow /> : <PresenceBuilder />
+}
+
+function PresenceBuilder() {
   const [runtimeAccounts, setRuntimeAccounts] = useState<SelfbotAccount[]>([])
   const [demoAccountId] = useState(readDemoAccountId)
   const [demoAccountVisible, setDemoAccountVisible] = useState(
@@ -265,6 +406,8 @@ function App() {
   const [activeAccountId, setActiveAccountId] = useState('')
   const [selfbotToken, setSelfbotToken] = useState('')
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+  const [autoConnectInProgress, setAutoConnectInProgress] = useState(false)
+  const [autoConnectingAccountIds, setAutoConnectingAccountIds] = useState<string[]>([])
   const [uploadedPresenceCount, setUploadedPresenceCount] = useState(0)
   const [selfbotBusy, setSelfbotBusy] = useState(false)
   const [busyAccountId, setBusyAccountId] = useState('')
@@ -272,17 +415,20 @@ function App() {
   const [forgetBusy, setForgetBusy] = useState(false)
   const [bulkAccountsBusy, setBulkAccountsBusy] = useState(false)
   const [canStoreToken, setCanStoreToken] = useState(false)
-  const [autoConnectDraft, setAutoConnectDraft] = useState(appState.globalSettings.autoConnectAccounts)
-  const [closeToTrayDraft, setCloseToTrayDraft] = useState(appState.globalSettings.closeToTray)
-  const [privacyModeDraft, setPrivacyModeDraft] = useState(appState.globalSettings.privacyMode)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
+  const [debugConsoleEnabled, setDebugConsoleEnabled] = useState(false)
   const [presetName, setPresetName] = useState('')
   const [presetFiles, setPresetFiles] = useState<PresetFile[]>([])
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false)
   const [presetBusy, setPresetBusy] = useState(false)
   const presetSelectorRef = useRef<HTMLDivElement>(null)
-  const [statusMessage, setStatusMessage] = useState('')
+  const autoConnectProgressSeenRef = useRef(false)
+  const [statusMessage, setStatusMessageState] = useState('')
+  const setStatusMessage = (message: string) => {
+    setStatusMessageState(message)
+    if (message.trim()) void window.crpBridge?.logDebugMessage(debugLevelForMessage(message), message).catch(() => undefined)
+  }
   const accounts = runtimeAccounts
   const { autoConnectAccounts, closeToTray, privacyMode } = appState.globalSettings
   const selectedAccountId = accounts.some((account) => account.accountId === activeAccountId)
@@ -395,11 +541,35 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const bridge = window.crpBridge
+    const handleError = (event: ErrorEvent) => {
+      void bridge?.logDebugMessage('ERROR', event.message || 'Renderer error.').catch(() => undefined)
+    }
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const message = event.reason instanceof Error ? event.reason.message : 'Unhandled promise rejection.'
+      void bridge?.logDebugMessage('ERROR', message).catch(() => undefined)
+    }
+    window.addEventListener('error', handleError)
+    window.addEventListener('unhandledrejection', handleRejection)
+    return () => {
+      window.removeEventListener('error', handleError)
+      window.removeEventListener('unhandledrejection', handleRejection)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
     const unsubscribe = window.crpBridge?.onSelfbotAccountsUpdated((nextAccounts) => {
       if (!active) return
       syncRuntimeAccounts(nextAccounts)
       setStatusMessage(connectedAccountsLabel(nextAccounts))
+    })
+    const unsubscribeProgress = window.crpBridge?.onSelfbotConnectionProgress((progress) => {
+      if (!active) return
+      autoConnectProgressSeenRef.current = true
+      setAutoConnectInProgress(progress.active)
+      setAutoConnectingAccountIds(progress.connectingAccountIds)
+      setStatusMessage(progress.message)
     })
     void window.crpBridge?.selfbotStatus().then((result) => {
       if (!active) return
@@ -411,16 +581,17 @@ function App() {
         closeToTray: result.closeToTray ?? true,
         privacyMode: result.privacyMode ?? false,
       }
+      setDebugConsoleEnabled(result.debugConsole ?? false)
       updateGlobalSettings(globalSettings)
-      setAutoConnectDraft(globalSettings.autoConnectAccounts)
-      setCloseToTrayDraft(globalSettings.closeToTray)
-      setPrivacyModeDraft(globalSettings.privacyMode)
-      if (!result.canStoreToken) setStatusMessage('Secure storage unavailable.')
-      else setStatusMessage(connectedAccountsLabel(nextAccounts))
+      if (!autoConnectProgressSeenRef.current) {
+        if (!result.canStoreToken) setStatusMessage('Secure storage unavailable.')
+        else setStatusMessage(connectedAccountsLabel(nextAccounts))
+      }
     }).catch(() => setStatusMessage('Couldn’t load accounts.'))
     return () => {
       active = false
       unsubscribe?.()
+      unsubscribeProgress?.()
     }
   }, [])
 
@@ -797,46 +968,58 @@ function App() {
   }
 
   const openSettings = () => {
-    setAutoConnectDraft(autoConnectAccounts)
-    setCloseToTrayDraft(closeToTray)
-    setPrivacyModeDraft(privacyMode)
     setSettingsOpen(true)
   }
 
-  const saveSettings = async () => {
+  const updateAppSetting = async (key: 'autoConnectAccounts' | 'closeToTray' | 'privacyMode' | 'debugConsole', value: boolean) => {
+    if (settingsBusy) return
     setSettingsBusy(true)
     try {
-      const result = await window.crpBridge?.saveAppSettings({ autoConnectAccounts: autoConnectDraft, closeToTray: closeToTrayDraft, privacyMode: privacyModeDraft })
+      const result = await window.crpBridge?.saveAppSettings({ [key]: value })
       if (!result?.ok) {
-        setStatusMessage('Couldn’t save settings.')
+        setStatusMessage('Couldn’t update setting.')
         return
       }
-      updateGlobalSettings({
-        autoConnectAccounts: autoConnectDraft,
-        closeToTray: closeToTrayDraft,
-        privacyMode: privacyModeDraft,
-      })
-      setSettingsOpen(false)
-      setStatusMessage('Settings saved.')
+      const labels = {
+        autoConnectAccounts: 'Auto-connect',
+        closeToTray: 'Run in tray',
+        privacyMode: 'Privacy mode',
+        debugConsole: 'Debug console',
+      }
+      if (key === 'debugConsole') setDebugConsoleEnabled(value)
+      else updateGlobalSettings({ ...appState.globalSettings, [key]: value })
+      setStatusMessage(`${labels[key]} ${value ? 'enabled.' : 'disabled.'}`)
     } catch {
-      setStatusMessage('Couldn’t save settings.')
+      setStatusMessage('Couldn’t update setting.')
     } finally {
       setSettingsBusy(false)
+    }
+  }
+
+  const openDebugConsoleWindow = async () => {
+    try {
+      const result = await window.crpBridge?.openDebugConsole()
+      if (!result?.ok) setStatusMessage('Save the debug console setting first.')
+    } catch {
+      setStatusMessage('Couldn’t open debug console.')
     }
   }
 
   const resetSettings = async () => {
     setSettingsBusy(true)
     try {
-      const result = await window.crpBridge?.saveAppSettings({ autoConnectAccounts: false, closeToTray: true, privacyMode: false })
+      const result = await window.crpBridge?.saveAppSettings({
+        autoConnectAccounts: false,
+        closeToTray: true,
+        privacyMode: false,
+        debugConsole: false,
+      })
       if (!result?.ok) {
         setStatusMessage('Couldn’t reset settings.')
         return
       }
       updateGlobalSettings({ autoConnectAccounts: false, closeToTray: true, privacyMode: false })
-      setAutoConnectDraft(false)
-      setCloseToTrayDraft(true)
-      setPrivacyModeDraft(false)
+      setDebugConsoleEnabled(false)
       setStatusMessage('Settings reset.')
     } catch {
       setStatusMessage('Couldn’t reset settings.')
@@ -893,9 +1076,6 @@ function App() {
       const settingsResult = await window.crpBridge?.saveAppSettings(nextState.globalSettings)
       if (!settingsResult?.ok) throw new Error('Couldn’t load preset.')
       setAppState(nextState)
-      setAutoConnectDraft(nextState.globalSettings.autoConnectAccounts)
-      setCloseToTrayDraft(nextState.globalSettings.closeToTray)
-      setPrivacyModeDraft(nextState.globalSettings.privacyMode)
       setStatusMessage('Preset loaded.')
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
@@ -916,9 +1096,6 @@ function App() {
       localStorage.removeItem(LEGACY_PRESENCES_STORAGE_KEY)
       setAppState(nextState)
       setConnectionState('disconnected')
-      setAutoConnectDraft(nextState.globalSettings.autoConnectAccounts)
-      setCloseToTrayDraft(nextState.globalSettings.closeToTray)
-      setPrivacyModeDraft(nextState.globalSettings.privacyMode)
       setStatusMessage('Reset complete.')
     } catch {
       setStatusMessage('Couldn’t reset app.')
@@ -955,7 +1132,7 @@ function App() {
         </div>
         <div className="header-controls">
           {statusMessage && (
-            <div className={`runtime-status ${connectionState}`} role="status">
+            <div className={`runtime-status ${autoConnectInProgress ? 'starting' : connectionState}`} role="status" aria-live="polite">
               <span className="status-light" />
               <span>{statusMessage}</span>
             </div>
@@ -994,44 +1171,62 @@ function App() {
               <h2 id="settings-title">Settings</h2>
               <button className="icon-button" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>×</button>
             </header>
-            <label className="settings-toggle">
-              <span>
-                <strong>Auto-connect saved accounts</strong>
-                <small>Reconnect them when CRP opens.</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={autoConnectDraft}
-                onChange={(event) => setAutoConnectDraft(event.target.checked)}
-              />
-            </label>
-            <label className="settings-toggle">
-              <span>
-                <strong>Keep running in tray on close</strong>
-              </span>
-              <input
-                type="checkbox"
-                checked={closeToTrayDraft}
-                onChange={(event) => setCloseToTrayDraft(event.target.checked)}
-              />
-            </label>
-            <label className="settings-toggle">
-              <span>
-                <strong>Privacy mode</strong>
-                <small>Hide account names and IDs.</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={privacyModeDraft}
-                onChange={(event) => setPrivacyModeDraft(event.target.checked)}
-              />
-            </label>
+            <div className="settings-pane">
+              <label className="settings-toggle">
+                <span>
+                  <strong>Auto-connect saved accounts</strong>
+                  <small>Reconnect them when CRP opens.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={autoConnectAccounts}
+                  disabled={settingsBusy}
+                  onChange={(event) => void updateAppSetting('autoConnectAccounts', event.target.checked)}
+                />
+              </label>
+              <label className="settings-toggle">
+                <span><strong>Keep running in tray on close</strong></span>
+                <input
+                  type="checkbox"
+                  checked={closeToTray}
+                  disabled={settingsBusy}
+                  onChange={(event) => void updateAppSetting('closeToTray', event.target.checked)}
+                />
+              </label>
+              <label className="settings-toggle">
+                <span>
+                  <strong>Privacy mode</strong>
+                  <small>Hide account names and IDs.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={privacyMode}
+                  disabled={settingsBusy}
+                  onChange={(event) => void updateAppSetting('privacyMode', event.target.checked)}
+                />
+              </label>
+              <label className="settings-toggle">
+                <span>
+                  <strong>Debug console</strong>
+                  <small>See recent events and errors.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={debugConsoleEnabled}
+                  disabled={settingsBusy}
+                  onChange={(event) => void updateAppSetting('debugConsole', event.target.checked)}
+                />
+              </label>
+              {debugConsoleEnabled && (
+                <div className="debug-launch-panel">
+                  <button className="button button-secondary" type="button" onClick={() => void openDebugConsoleWindow()}>
+                    Open Console
+                  </button>
+                </div>
+              )}
+            </div>
             <footer className="settings-actions">
               <button className="button button-secondary settings-reset" type="button" disabled={settingsBusy} onClick={() => void resetSettings()}>Reset</button>
-              <button className="button button-secondary" type="button" onClick={() => setSettingsOpen(false)}>Cancel</button>
-              <button className="button button-start" type="button" disabled={settingsBusy} onClick={() => void saveSettings()}>
-                {settingsBusy ? 'Saving...' : 'Save settings'}
-              </button>
             </footer>
           </section>
         </div>
@@ -1114,7 +1309,7 @@ function App() {
                   <button className="account-select" type="button" onClick={() => setStatusMessage('૮ ҂ ‸ ๑')}>
                     <span className="account-index">01</span>
                     <span className="account-identity">
-                      <strong>{privacyMode ? 'Account 01' : 'ostgaloa'}</strong>
+                      <strong>{privacyMode ? 'Account 01' : 'Demo account'}</strong>
                       <code>{privacyMode ? '••••••••••••' : demoAccountId}</code>
                     </span>
                     <span className="account-state is-connected">Connected</span>
@@ -1149,16 +1344,16 @@ function App() {
                   </button>
                 </div>
                 <div className="account-actions">
-                  {account.connected ? (
-                    <button className="text-action disconnect-account" type="button" disabled={busyAccountId === account.accountId} onClick={() => void disconnectSelfbotAccount(account.accountId)}>
+                      {account.connected ? (
+                    <button className="text-action disconnect-account" type="button" disabled={busyAccountId === account.accountId || autoConnectingAccountIds.includes(account.accountId)} onClick={() => void disconnectSelfbotAccount(account.accountId)}>
                       {busyAccountId === account.accountId ? 'Disconnecting...' : 'Disconnect'}
                     </button>
                   ) : (
-                    <button className="text-action" type="button" disabled={busyAccountId === account.accountId} onClick={() => void reconnectSelfbotAccount(account.accountId)}>
-                      {busyAccountId === account.accountId ? 'Connecting...' : 'Reconnect'}
+                    <button className="text-action" type="button" disabled={busyAccountId === account.accountId || autoConnectingAccountIds.includes(account.accountId)} onClick={() => void reconnectSelfbotAccount(account.accountId)}>
+                      {busyAccountId === account.accountId || autoConnectingAccountIds.includes(account.accountId) ? 'Connecting...' : 'Reconnect'}
                     </button>
                   )}
-                  <button className="text-action forget-account" type="button" disabled={busyAccountId === account.accountId} onClick={() => setForgetAccountId(account.accountId)}>
+                  <button className="text-action forget-account" type="button" disabled={busyAccountId === account.accountId || autoConnectingAccountIds.includes(account.accountId)} onClick={() => setForgetAccountId(account.accountId)}>
                     Forget
                   </button>
                 </div>

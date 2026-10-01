@@ -1,13 +1,14 @@
 {
   "name": "crp-extnl",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "productName": "CRP Presence Builder",
   "description": "Desktop app for managing Discord rich-presence activities across multiple accounts.",
   "author": "CRP Presence Builder",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
@@ -31,7 +32,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -57,6 +60,7 @@
     "electron": "^44.5.0",
     "electron-builder": "^26.15.3",
     "oxlint": "^1.81.0",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   }

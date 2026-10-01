@@ -17,6 +17,7 @@ export function normalizeAppSettings(value) {
     autoConnectAccounts: settings.autoConnectAccounts === true,
     closeToTray: settings.closeToTray !== false,
     privacyMode: settings.privacyMode === true,
+    debugConsole: settings.debugConsole === true,
   }
 }
 
