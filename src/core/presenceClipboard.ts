@@ -1,4 +1,4 @@
-import type { ActivityItem } from './activityEngine'
+import { MAX_PRESENCES_PER_ACCOUNT, type ActivityItem } from './activityEngine'
 import { updateAccount, type AppState } from './accountState'
 import { decodeBase64Utf8, encodeBase64Utf8 } from './presetSystem'
 
@@ -33,7 +33,7 @@ const numberFields = new Set(['statusDisplayType', 'partyCurrent', 'partyMaximum
 const booleanFields = new Set(['enabled', 'instance', 'customElapsedEnabled', 'emojiAnimated'])
 const validTypes = new Set(['Playing', 'Streaming', 'Listening', 'Watching', 'Competing', 'Custom'])
 const maxPayloadLength = 4_000_000
-const maxPresenceCount = 100
+const maxPresenceCount = MAX_PRESENCES_PER_ACCOUNT
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

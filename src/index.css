@@ -83,7 +83,7 @@ html, body, #root {
 }
 
 body {
-  background: linear-gradient(135deg, var(--background-base) 0%, var(--background-gradient-mid) 52%, var(--background-gradient-elevated) 82%, var(--background-gradient-edge) 100%) fixed;
+  background-color: var(--background-base);
 }
 
 button, input, textarea {

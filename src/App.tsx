@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { buildSelfbotActivityGroups, getActivityTimerMode, type ActivityItem, type ActivityPlatform, type ActivityTimerMode, type ActivityType } from './core/activityEngine'
+import { buildSelfbotActivityGroups, getActivityTimerMode, MAX_PRESENCES_PER_ACCOUNT, type ActivityItem, type ActivityPlatform, type ActivityTimerMode, type ActivityType } from './core/activityEngine'
 import { syncAppAccounts, updateAccount, type AppState, type GlobalSettings } from './core/accountState'
 import { applyPreset, createPreset, createResetState, decodePreset, encodePreset, type PresetPresence } from './core/presetSystem'
 import { applyPresenceClipboard, decodePresenceClipboard, encodePresenceClipboard } from './core/presenceClipboard'
@@ -344,7 +344,7 @@ function DebugConsoleWindow() {
         <div className="header-controls debug-window-actions">
           <span className="debug-console-capacity">Session · {debugLogs.length}/{MAX_DEBUG_LOG_ENTRIES}</span>
           <button className="button button-secondary debug-window-button" type="button" disabled={visibleDebugLogs.length === 0} onClick={() => void copyVisibleLogs()}>
-            {logsCopied ? 'Copied' : 'Copy logs'}
+            {logsCopied ? 'Copied' : <><span className="debug-copy-label">Copy logs</span><span className="debug-copy-short">Copy</span></>}
           </button>
           <button className="button button-secondary debug-window-button" type="button" disabled={debugLogs.length === 0} onClick={() => {
             void window.crpBridge?.clearDebugWindowLogs().catch(() => undefined)
@@ -372,9 +372,9 @@ function DebugConsoleWindow() {
         <div className="debug-console" ref={debugConsoleRef} role="log" aria-label="Application log" aria-live="off">
           {visibleDebugLogs.length > 0 ? visibleDebugLogs.map((entry) => (
             <div className="debug-log-entry" key={entry.id}>
-              <time dateTime={entry.timestamp}>[{new Date(entry.timestamp).toLocaleTimeString()}]</time>{' '}
-              <span className="debug-log-prefix">[CRP]</span>{' '}
-              <span className={`debug-log-level ${entry.level.toLowerCase()}`}>[{entry.level}]</span>{' '}
+              <time dateTime={entry.timestamp}>[{new Date(entry.timestamp).toLocaleTimeString()}]</time>{'\u200A'}
+              <span className="debug-log-prefix">[CRP]</span>{'\u200A'}
+              <span className={`debug-log-level ${entry.level.toLowerCase()}`}>[{entry.level}]</span>{'\u200A'}
               <span className="debug-log-message">{entry.message}</span>
             </div>
           )) : (
@@ -399,6 +399,7 @@ function PresenceBuilder() {
   const [appState, setAppState] = useState(() => readInitialAppState())
   const [editingPresenceId, setEditingPresenceId] = useState('')
   const [presenceNameDraft, setPresenceNameDraft] = useState('')
+  const [collapsedPresenceIds, setCollapsedPresenceIds] = useState<Set<string>>(() => new Set())
   const [newPresenceId, setNewPresenceId] = useState('')
   const [presenceAddFeedback, setPresenceAddFeedback] = useState(0)
   const [presenceClipboardBusy, setPresenceClipboardBusy] = useState(false)
@@ -440,6 +441,11 @@ function PresenceBuilder() {
   const selectedPresences = selectedAccount?.presences ?? []
   const totalPresenceCount = appState.accounts.reduce((count, account) => count + account.presences.length, 0)
   const selectedPresetExists = presetFiles.some((preset) => preset.name === presetName.trim())
+  const presenceAddTooltip = totalPresenceCount >= MAX_PRESENCES
+    ? `${MAX_PRESENCES} presences max total.`
+    : selectedPresences.length >= MAX_PRESENCES_PER_ACCOUNT
+      ? `${MAX_PRESENCES_PER_ACCOUNT} presences max per account.`
+      : undefined
 
   const syncRuntimeAccounts = (nextAccounts: SelfbotAccount[]) => {
     setRuntimeAccounts(nextAccounts)
@@ -741,6 +747,10 @@ function PresenceBuilder() {
       setStatusMessage(`${MAX_PRESENCES} presences max.`)
       return
     }
+    if (selectedPresences.length >= MAX_PRESENCES_PER_ACCOUNT) {
+      setStatusMessage(`${MAX_PRESENCES_PER_ACCOUNT} presences max per account.`)
+      return
+    }
     const presence = makePresence()
     setAppState((current) => updateAccount(current, selectedAccountId, (account) => ({
       ...account,
@@ -748,6 +758,15 @@ function PresenceBuilder() {
     })))
     setNewPresenceId(presence.id)
     setPresenceAddFeedback((current) => current + 1)
+  }
+
+  const togglePresenceCollapsed = (presenceId: string) => {
+    setCollapsedPresenceIds((current) => {
+      const next = new Set(current)
+      if (next.has(presenceId)) next.delete(presenceId)
+      else next.add(presenceId)
+      return next
+    })
   }
 
   const copySelectedAccountPresences = async () => {
@@ -780,6 +799,9 @@ function PresenceBuilder() {
       }
       const clipboardText = await bridge.readClipboardText()
       const payload = decodePresenceClipboard(clipboardText)
+      if (payload.data.presences.length > MAX_PRESENCES_PER_ACCOUNT) {
+        throw new Error(`${MAX_PRESENCES_PER_ACCOUNT} presences max per account.`)
+      }
       const otherPresenceCount = appState.accounts.reduce((count, account) => (
         account.accountId === targetAccountId ? count : count + account.presences.length
       ), 0)
@@ -799,6 +821,8 @@ function PresenceBuilder() {
       const message = error instanceof Error ? error.message : ''
       setStatusMessage(message === `${MAX_PRESENCES} presences max.`
         ? message
+        : message === `${MAX_PRESENCES_PER_ACCOUNT} presences max per account.`
+          ? message
         : message === 'The selected account is no longer available.'
           ? 'Account unavailable.'
           : 'Couldn’t paste presences.')
@@ -915,6 +939,15 @@ function PresenceBuilder() {
     const publishable = active.filter((presence) => presence.accountId && connectedAccountIds.has(presence.accountId))
     if (publishable.length === 0) {
       setStatusMessage('Connect the assigned account first.')
+      return
+    }
+    const activePresencesPerAccount = new Map<string, number>()
+    for (const presence of publishable) {
+      const accountId = presence.accountId ?? ''
+      activePresencesPerAccount.set(accountId, (activePresencesPerAccount.get(accountId) ?? 0) + 1)
+    }
+    if ([...activePresencesPerAccount.values()].some((count) => count > MAX_PRESENCES_PER_ACCOUNT)) {
+      setStatusMessage(`${MAX_PRESENCES_PER_ACCOUNT} active presences max per account.`)
       return
     }
     const invalidButton = publishable.find((presence) => (
@@ -1042,7 +1075,7 @@ function PresenceBuilder() {
       if (!result?.ok) throw new Error('Couldn’t save preset.')
       setPresetName(result.name ?? name)
       await refreshPresets()
-      setStatusMessage('Preset saved and copied.')
+      setStatusMessage('Preset saved.')
     } catch {
       setStatusMessage('Couldn’t save preset.')
     } finally {
@@ -1050,36 +1083,70 @@ function PresenceBuilder() {
     }
   }
 
+  const applyPresetNow = async (preset: ReturnType<typeof decodePreset>) => {
+    const skippedPresences = preset.data.accounts.reduce((count, account, index) => (
+      count + (index >= accounts.length
+        ? account.presences.length
+        : Math.max(0, account.presences.length - MAX_PRESENCES_PER_ACCOUNT))
+    ), 0)
+    const nextState = applyPreset(preset, accounts.map((account) => account.accountId), restorePresetPresence)
+    const settingsResult = await window.crpBridge?.saveAppSettings(nextState.globalSettings)
+    if (!settingsResult?.ok) throw new Error('Couldn’t apply preset.')
+    setAppState(nextState)
+    return skippedPresences
+  }
+
   const loadPresetNow = async () => {
+    const name = presetName.trim()
+    if (!selectedPresetExists) {
+      setStatusMessage('Select a saved preset first.')
+      return
+    }
     setPresetBusy(true)
     try {
-      let preset
-      const clipboardText = await window.crpBridge?.readClipboardText().catch(() => '') ?? ''
-      if (clipboardText) {
-        try {
-          preset = decodePreset(clipboardText)
-        } catch {
-          preset = undefined
-        }
-      }
-      if (!preset) {
-        const name = presetName.trim()
-        if (!name) throw new Error('Clipboard has no valid preset and no local preset is selected.')
-        const result = await window.crpBridge?.loadPreset(name)
-        if (!result?.ok || typeof result.content !== 'string') {
-          throw new Error('Couldn’t load preset.')
-        }
-        preset = decodePreset(result.content)
-      }
-
-      const nextState = applyPreset(preset, accounts.map((account) => account.accountId), restorePresetPresence)
-      const settingsResult = await window.crpBridge?.saveAppSettings(nextState.globalSettings)
-      if (!settingsResult?.ok) throw new Error('Couldn’t load preset.')
-      setAppState(nextState)
-      setStatusMessage('Preset loaded.')
+      const result = await window.crpBridge?.loadPreset(name)
+      if (!result?.ok || typeof result.content !== 'string') throw new Error('Couldn’t load preset.')
+      const skippedPresences = await applyPresetNow(decodePreset(result.content))
+      setStatusMessage(skippedPresences > 0
+        ? `Preset loaded; skipped ${skippedPresences} over-limit presences.`
+        : 'Preset loaded.')
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
       setStatusMessage(message.startsWith('Preset needs ') ? message : 'Couldn’t load preset.')
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  const exportPresetNow = async () => {
+    setPresetBusy(true)
+    try {
+      const bridge = window.crpBridge
+      if (!bridge || typeof bridge.writeClipboardText !== 'function') throw new Error('Clipboard is unavailable.')
+      const preset = createPreset(appState, accounts.map((account) => account.accountId))
+      const result = await bridge.writeClipboardText(encodePreset(preset))
+      if (!result?.ok) throw new Error('Couldn’t export preset.')
+      setStatusMessage('Current preset exported to clipboard.')
+    } catch {
+      setStatusMessage('Couldn’t export preset.')
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  const importPresetNow = async () => {
+    setPresetBusy(true)
+    try {
+      const bridge = window.crpBridge
+      if (!bridge || typeof bridge.readClipboardText !== 'function') throw new Error('Clipboard is unavailable.')
+      const clipboardText = await bridge.readClipboardText()
+      const skippedPresences = await applyPresetNow(decodePreset(clipboardText))
+      setStatusMessage(skippedPresences > 0
+        ? `Preset imported; skipped ${skippedPresences} over-limit presences.`
+        : 'Preset imported from clipboard.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      setStatusMessage(message.startsWith('Preset needs ') ? message : 'Couldn’t import preset from clipboard.')
     } finally {
       setPresetBusy(false)
     }
@@ -1367,7 +1434,7 @@ function PresenceBuilder() {
           <div className="builder-heading">
             <div>
               <p className="eyebrow">Activities grouped by account</p>
-              <h2>Presences <span>{selectedPresences.length}</span></h2>
+              <h2>Presences <span>{selectedPresences.length}/{MAX_PRESENCES_PER_ACCOUNT}</span></h2>
             </div>
           </div>
 
@@ -1433,11 +1500,17 @@ function PresenceBuilder() {
               )}
             </div>
             <div className="preset-actions">
-              <button className="button button-secondary" type="button" disabled={presetBusy} onClick={() => void loadPresetNow()}>
+              <button className="button button-secondary" type="button" disabled={presetBusy || !selectedPresetExists} onClick={() => void loadPresetNow()}>
                 {presetBusy ? 'Loading...' : 'Load'}
               </button>
               <button className="button button-secondary" type="button" disabled={presetBusy || !presetName.trim()} onClick={() => void savePresetNow()}>
                 {presetBusy ? 'Saving...' : 'Save'}
+              </button>
+              <button className="button button-secondary" type="button" disabled={presetBusy} onClick={() => void importPresetNow()}>
+                Import
+              </button>
+              <button className="button button-secondary" type="button" disabled={presetBusy} onClick={() => void exportPresetNow()}>
+                Export
               </button>
               <button className="button button-secondary" type="button" disabled={presetBusy} onClick={() => void resetPresetState()}>
                 Reset
@@ -1485,17 +1558,19 @@ function PresenceBuilder() {
             >
               {presenceClipboardFeedback === 'pasted' ? '✓ Pasted' : 'Paste'}
             </button>
-            <button
-              className={`button button-add presence-add-button${presenceAddFeedback ? ' is-added' : ''}`}
-              type="button"
-              disabled={!selectedAccountId || totalPresenceCount >= MAX_PRESENCES}
-              aria-live="polite"
-              onClick={addPresence}
-            >
-              <span key={presenceAddFeedback} className={`presence-add-label${presenceAddFeedback ? ' is-added' : ''}`}>
-                {presenceAddFeedback ? `✓ Added ${presenceAddFeedback}` : '+ Add presence'}
-              </span>
-            </button>
+            <div className="presence-add-tooltip" data-tooltip={presenceAddTooltip}>
+              <button
+                className={`button button-add presence-add-button${presenceAddFeedback ? ' is-added' : ''}`}
+                type="button"
+                disabled={!selectedAccountId || totalPresenceCount >= MAX_PRESENCES || selectedPresences.length >= MAX_PRESENCES_PER_ACCOUNT}
+                aria-live="polite"
+                onClick={addPresence}
+              >
+                <span key={presenceAddFeedback} className={`presence-add-label${presenceAddFeedback ? ' is-added' : ''}`}>
+                  {presenceAddFeedback ? `✓ Added ${presenceAddFeedback}` : '+ Add presence'}
+                </span>
+              </button>
+            </div>
           </div>
 
           {selectedPresences.length === 0 ? (
@@ -1511,8 +1586,22 @@ function PresenceBuilder() {
                   className={`presence-card${presence.enabled ? '' : ' is-disabled'}${newPresenceId === presence.id ? ' is-new' : ''}`}
                   key={presence.id}
                 >
-                  <header className="presence-card-header">
+                  <header className="presence-card-header" onClick={(event) => {
+                    const target = event.target
+                    if (target instanceof Element && target.closest('button, input, select, label')) return
+                    togglePresenceCollapsed(presence.id)
+                  }}>
                     <div className="card-title" data-tooltip={editingPresenceId === presence.id ? undefined : 'Rename presence'}>
+                      <button
+                        className={`presence-collapse-button${collapsedPresenceIds.has(presence.id) ? ' is-collapsed' : ''}`}
+                        type="button"
+                        aria-expanded={!collapsedPresenceIds.has(presence.id)}
+                        aria-label={collapsedPresenceIds.has(presence.id) ? 'Expand presence' : 'Collapse presence'}
+                        title={collapsedPresenceIds.has(presence.id) ? 'Expand' : 'Collapse'}
+                        onClick={() => togglePresenceCollapsed(presence.id)}
+                      >
+                        <span className="presence-collapse-icon" aria-hidden="true" />
+                      </button>
                       <span className="card-order">{String(index + 1).padStart(2, '0')}</span>
                       {editingPresenceId === presence.id ? (
                         <input
@@ -1548,6 +1637,7 @@ function PresenceBuilder() {
                     </div>
                   </header>
 
+                  <div className="presence-card-content" hidden={collapsedPresenceIds.has(presence.id)}>
                   <div className="field-row field-row-selects">
                     <label>
                       Discord account
@@ -1774,6 +1864,7 @@ function PresenceBuilder() {
                       </label>
                     </div>
                   </details>}
+                  </div>
                 </article>
               ))}
             </div>

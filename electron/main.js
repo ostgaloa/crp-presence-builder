@@ -422,10 +422,10 @@ function createDebugConsoleWindow() {
 
   const rendererUrl = getRendererUrl('debug-console')
   debugWindow = new BrowserWindow({
-    width: 820,
-    height: 520,
-    minWidth: 560,
-    minHeight: 340,
+    width: 480,
+    height: 300,
+    minWidth: 420,
+    minHeight: 240,
     resizable: true,
     frame: false,
     title: 'CRP Debug Console',
@@ -562,7 +562,6 @@ handleTrustedIpc('crp:listPresets', async () => {
 handleTrustedIpc('crp:savePreset', async (_event, name, content) => {
   try {
     const savedName = savePreset(presetsDirectoryPath(), name, content)
-    clipboard.writeText(content)
     return { ok: true, name: savedName }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : 'Could not save preset.' }

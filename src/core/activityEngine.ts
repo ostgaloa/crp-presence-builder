@@ -1,6 +1,7 @@
 export type ActivityType = 'Playing' | 'Streaming' | 'Listening' | 'Watching' | 'Competing' | 'Custom'
 export type ActivityTimerMode = 'off' | 'elapsed' | 'countdown' | 'progress'
 export type ActivityPlatform = 'desktop' | 'samsung' | 'xbox' | 'ios' | 'android' | 'embedded' | 'ps4' | 'ps5'
+export const MAX_PRESENCES_PER_ACCOUNT = 5
 
 export interface ActivityItem {
   id: string

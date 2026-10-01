@@ -1,4 +1,4 @@
-import type { ActivityItem } from './activityEngine'
+import { MAX_PRESENCES_PER_ACCOUNT, type ActivityItem } from './activityEngine'
 import type { AppState, GlobalSettings } from './accountState'
 
 export type PresetPresence = Omit<ActivityItem, 'id' | 'accountId'>
@@ -190,9 +190,6 @@ export function applyPreset<Presence>(
   accountIdsInSlotOrder: string[],
   createPresence: (value: PresetPresence, accountId: string) => Presence,
 ): AppState<Presence> {
-  if (preset.data.accounts.length > accountIdsInSlotOrder.length) {
-    throw new Error(`Preset needs ${preset.data.accounts.length} accounts; ${accountIdsInSlotOrder.length} available.`)
-  }
   return {
     globalSettings: preset.data.global,
     accounts: accountIdsInSlotOrder.map((accountId, index) => {
@@ -200,7 +197,7 @@ export function applyPreset<Presence>(
       return {
         accountId,
         settings: saved?.settings ?? {},
-        presences: saved?.presences.map((presence) => createPresence(presence, accountId)) ?? [],
+        presences: saved?.presences.slice(0, MAX_PRESENCES_PER_ACCOUNT).map((presence) => createPresence(presence, accountId)) ?? [],
       }
     }),
   }
